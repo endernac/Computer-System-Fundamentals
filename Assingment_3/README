@@ -1,0 +1,155 @@
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+                                               PART A
+---------------------------------------------------------------------------------------------------------------
+
+**Even though this isn't required, the structure of my program is fairly complex, so here is a brief overview**
+
+adtls.cpp: (address tools)
+    contains a few address manipulation related functions, such as getting a tag, offset, checking a
+    number is a multiple of 2...
+
+main.cpp: 
+    does error checking of program parameters and creates and runs a simulation object
+
+simulation.cpp:
+    Holds the simulation class. Stores all the necessary statistics and a cache object as fields. A simulation 
+    has two public functions: run() and get_results(), which are pretty self explanatory. Less self explanatory 
+    are the two private helper functions that run calls: store() and load()
+        load()  - takes an address and calls cache.get(). If address in cache, it's a hit, if not it's a miss
+                    updates cycles, load hits, load misses, and total loads accordingly.
+        store() - takes an address and updates cycles, store hits, store misses, and total stores accordingly.
+                    The logic is convoluted depending on the write settings, so hopefully it's better explained
+                    in the comments in the actual function. Note that A-->B notation means transferring memory 
+                    from A to B, so addr-->cache means storing address in cache and cache-->memory means you're
+                    transferring a block in cache to memory.
+
+cache.cpp:
+    stores an array of pointers to Set objects. The index of the Set* in the array is the index of the Set* 
+    (the Set objects themselves hold the tags). Depending on the eviction type, the Set objects are declared
+    as either SetLRU or SetFIFO objects. Cache most important two functions are get() and put().
+        get() - takes an address & checks if the correct set contains the relevant tag
+        put() - takes and address & tries to place the relevant tag into the correct set.
+
+set.cpp:
+    This holds the abstract class Set. This file is probably the most complex, and relies on hashmap and 
+    linked list data structure to provide functionality. My basic approach is similar to the CacheLRU 
+    approach described here: https://www.interviewcake.com/concept/java/lru-cache. However, instead of 
+    directly creating an LRU cache, in this file, I just created the basic functions required to easily create 
+    one in child classes. These functions are the 4 protected functions: add(), erase(), in_set(), smear().
+        add()       - adds a tag to the list and the map
+        erase()     - removes tag from both list and map
+        in_set()    - checks in tag is in the set
+        smear()     - makes a block dirty without changing anything else, e.g. position
+    In additon, the class has public functions get(), put(), and toString()
+        get()       - virtual (implemented in setLRU and setFIFO) checks if tag in set
+        put()       - virtual (implemented in setLRU and setFIFO) tries to add tag to set & records if it's 
+                        dirty.
+                        IMPORTANT: if a dirty block is pushed out if the set is full, put() returns 1
+        toString()  - prints contents of set (tag: dirty)
+    Note: a more detailed description of each function can be found in the file
+
+
+setLRU.cpp:
+    Holds SetLRU class, which overrides get() and put() from Set class.
+        get()   - checks if tag in set and moves it to front of the set if it is
+        put()   - tries to add tag to set. If it already is, then it changes the dirty bit and moves block
+                  to the front of the list
+
+setFIFO.cpp:
+    Holds SetFIFO class, which overrides get() and put() from Set class.
+        get()   - checks if tag in set
+        put()   - tries to add tag to set. If it already is in set, then it changes the dirty bit
+
+
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+                                               PART B
+---------------------------------------------------------------------------------------------------------------
+
+Below are the command line arguments of the traces I ran. To reduce the amount of variation, I fixed the cache
+size paramters and used the same file throughout all the tests of the different write settings. We can see from
+the 256 4 16 trial on traces/gcc.trace that the write back cache drastically outperformed the write through in terms
+of cache cycles (write-back lru is 9264083, which is nearly a third of write-through lru at 25120797). However, since 
+the numbers we picked for load and store durations were arbitrary, we should not take these numbers too seriously. The 
+most important statistic is probably the miss rates, since these are the bottleneck for speed of the cache. When we look 
+at miss rates, the distinction between write back and write through becomes less distinct. Instead, we see a big distinction 
+between no-write-allocate and write-allocate. For example, (write-allocate write-through fifo) has 4026 load misses and 9439
+store misses, where as (no-write-allocate write-through fifo) has 7180 load misses and store misses 33781. This is 2-3 times
+worse than write-allocate. Hence, we can conclude that write-allocate is better than no-write-allocate. Also, in practice, we
+know that it generally takes more cycles to store and load from memory comared to cache, write back should be more efficient
+in practice as well. To judge if lru or fif is better for write-back, we run more tests on different a the swim trace file.
+Since lruhas fewer cycles in both simiulations, we conclude that write-allocate write-back lru is the best cache management
+policy.
+
+./csim 256 4 16 write-allocate write-through fifo < traces/gcc.trace
+Total loads: 318197
+Total stores: 197486
+Load hits: 314171
+Load misses: 4026
+Store hits: 188047
+Store misses: 9439
+Total cycles: 25452797
+
+./csim 256 4 16 no-write-allocate write-through fifo < traces/gcc.trace 
+Total loads: 318197
+Total stores: 197486
+Load hits: 311017
+Load misses: 7180
+Store hits: 163705
+Store misses: 33781
+Total cycles: 22938797
+
+./csim 256 4 16 write-allocate write-through lru < traces/gcc.trace 
+Total loads: 318197
+Total stores: 197486
+Load hits: 314798
+Load misses: 3399
+Store hits: 188250
+Store misses: 9236
+Total cycles: 25120797
+
+./csim 256 4 16 no-write-allocate write-through lru < traces/gcc.trace 
+Total loads: 318197
+Total stores: 197486
+Load hits: 311613
+Load misses: 6584
+Store hits: 164819
+Store misses: 32667
+Total cycles: 22700397
+
+./csim 256 4 16 write-allocate write-back fifo < traces/gcc.trace 
+Total loads: 318197
+Total stores: 197486
+Load hits: 314171
+Load misses: 4026
+Store hits: 188047
+Store misses: 9439
+Total cycles: 9677283
+
+./csim 256 4 16 write-allocate write-back lru < traces/gcc.trace 
+Total loads: 318197
+Total stores: 197486
+Load hits: 314798
+Load misses: 3399
+Store hits: 188250
+Store misses: 9236
+Total cycles: 9264083
+
+./csim 256 4 16 write-allocate write-back fifo < traces/swim.trace
+Total loads: 220668
+Total stores: 82525
+Load hits: 218357
+Load misses: 2311
+Store hits: 71787
+Store misses: 10738
+Total cycles: 9817993
+
+./csim 256 4 16 write-allocate write-back lru < traces/swim.trace
+Total loads: 220668
+Total stores: 82525
+Load hits: 219507
+Load misses: 1161
+Store hits: 71956
+Store misses: 10569
+Total cycles: 9222793
+
